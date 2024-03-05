@@ -116,7 +116,6 @@ class TransformerInputRepresentations(nn.Module):
 
     def forward(self, spec, pos_enc):
         spec_transformed = self.spec_transform(spec)
-
         input_representations = spec_transformed + pos_enc
         input_representations = self.LayerNorm(input_representations)
         input_representations = self.dropout(input_representations)
@@ -124,14 +123,18 @@ class TransformerInputRepresentations(nn.Module):
 
 
 class TransformerSelfAttention(nn.Module):
-    def __init__(self, config, output_attentions=False, keep_multihead_output=False):
+    def __init__(self, config, output_attentions=False, output_key_query=False, keep_multihead_output=False):
         super(TransformerSelfAttention, self).__init__()
         if config.hidden_size % config.num_attention_heads != 0:
             raise ValueError(
                 "The hidden size (%d) is not a multiple of the number of attention "
                 "heads (%d)" % (config.hidden_size, config.num_attention_heads)
             )
+
+        # ATTENTION FUNCTIONALITY
         self.output_attentions = output_attentions
+        self.output_key_query = output_key_query
+
         self.keep_multihead_output = keep_multihead_output
         self.multihead_output = None
 
@@ -139,7 +142,9 @@ class TransformerSelfAttention(nn.Module):
         self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
+        # initializing key and queries
         self.query = nn.Linear(config.hidden_size, self.all_head_size)
+        print('query: ', self.query)
         self.key = nn.Linear(config.hidden_size, self.all_head_size)
         self.value = nn.Linear(config.hidden_size, self.all_head_size)
 
@@ -154,6 +159,7 @@ class TransformerSelfAttention(nn.Module):
         return x.permute(0, 2, 1, 3)
 
     def forward(self, hidden_states, attention_mask, head_mask=None):
+        print('hidden states: ', hidden_states.shape)
         mixed_query_layer = self.query(hidden_states)
         mixed_key_layer = self.key(hidden_states)
         mixed_value_layer = self.value(hidden_states)
@@ -193,6 +199,8 @@ class TransformerSelfAttention(nn.Module):
         context_layer = context_layer.view(*new_context_layer_shape)
         if self.output_attentions:
             return attention_probs, context_layer
+        if self.output_key_query:
+            return attention_probs, key_layer, query_layer, context_layer
         return context_layer
 
 
@@ -216,13 +224,15 @@ class TransformerSelfOutput(nn.Module):
 
 
 class TransformerAttention(nn.Module):
-    def __init__(self, config, output_attentions=False, keep_multihead_output=False):
+    def __init__(self, config, output_attentions=False, output_key_query=False, keep_multihead_output=False):
         super(TransformerAttention, self).__init__()
         self.output_attentions = output_attentions
+        self.output_key_query = output_key_query
         self.pre_layer_norm = config.pre_layer_norm
         self.self = TransformerSelfAttention(
             config,
             output_attentions=output_attentions,
+            output_key_query=output_key_query,
             keep_multihead_output=keep_multihead_output,
         )
         self.output = TransformerSelfOutput(config)
@@ -258,9 +268,15 @@ class TransformerAttention(nn.Module):
             self_output = self.self(input_tensor, attention_mask, head_mask)
         if self.output_attentions:
             attentions, self_output = self_output
+        if self.output_key_query:
+            print("self output: ", len(self_output))
+            attentions, keys, queries, self_output = self_output
+
         attention_output = self.output(self_output, input_tensor)
         if self.output_attentions:
             return attentions, attention_output
+        if self.output_key_query:
+            return attentions, keys, queries, attention_output
         return attention_output
 
 
@@ -299,13 +315,16 @@ class TransformerOutput(nn.Module):
 
 
 class TransformerLayer(nn.Module):
-    def __init__(self, config, output_attentions=False, keep_multihead_output=False):
+    def __init__(self, config, output_attentions=False, output_key_query=False, keep_multihead_output=False):
         super(TransformerLayer, self).__init__()
         self.output_attentions = output_attentions
+        self.output_key_query = output_key_query
+
         self.pre_layer_norm = config.pre_layer_norm
         self.attention = TransformerAttention(
             config,
             output_attentions=output_attentions,
+            output_key_query=output_key_query, 
             keep_multihead_output=keep_multihead_output,
         )
         self.intermediate = TransformerIntermediate(config)
@@ -317,6 +336,8 @@ class TransformerLayer(nn.Module):
         attention_output = self.attention(hidden_states, attention_mask, head_mask)
         if self.output_attentions:
             attentions, attention_output = attention_output
+        if self.output_key_query:
+            attentions, keys, queries, attention_output = attention_output
         if self.pre_layer_norm:
             # LayerNorm -> Intermediate -> Output (residual)
             intermediate_output = self.LayerNorm(attention_output)
@@ -327,17 +348,21 @@ class TransformerLayer(nn.Module):
         layer_output = self.output(intermediate_output, attention_output)
         if self.output_attentions:
             return attentions, layer_output
+        if self.output_key_query:
+            return attentions, keys, queries, layer_output
         return layer_output
 
 
 class TransformerEncoder(nn.Module):
-    def __init__(self, config, output_attentions=False, keep_multihead_output=False):
+    def __init__(self, config, output_attentions=False, output_key_query=False, keep_multihead_output=False):
         super(TransformerEncoder, self).__init__()
         self.output_attentions = output_attentions
+        self.output_key_query = output_key_query
         self.pre_layer_norm = config.pre_layer_norm
         layer = TransformerLayer(
             config,
             output_attentions=output_attentions,
+            output_key_query=output_key_query,
             keep_multihead_output=keep_multihead_output,
         )
         if config.share_layer:
@@ -365,16 +390,27 @@ class TransformerEncoder(nn.Module):
     ):
         all_encoder_layers = []
         all_attentions = []
+        all_keys = []
+        all_queries = []
+
         for i, layer_module in enumerate(self.layer):
             if output_all_encoded_layers:
                 if self.pre_layer_norm:
                     all_encoder_layers.append(self.LayerNorm[i](hidden_states))
                 else:
                     all_encoder_layers.append(hidden_states)
+
             hidden_states = layer_module(hidden_states, attention_mask, head_mask[i])
+            
             if self.output_attentions:
                 attentions, hidden_states = hidden_states
                 all_attentions.append(attentions)
+            if self.output_key_query:
+                attentions, keys, queries, hidden_states = hidden_states
+                all_attentions.append(attentions)
+                all_keys.append(keys)
+                all_queries.append(queries)
+                print('here within TransformerEncoder')
 
         if self.pre_layer_norm:
             all_encoder_layers.append(self.LayerNorm[-1](hidden_states))
@@ -383,6 +419,10 @@ class TransformerEncoder(nn.Module):
 
         if self.output_attentions:
             return all_attentions, all_encoder_layers
+        
+        if self.output_key_query:
+            return all_attentions, all_keys, all_queries, all_encoder_layers
+
         return all_encoder_layers
 
 
@@ -414,10 +454,11 @@ class TransformerSpecPredictionHead(nn.Module):
 class TransformerInitModel(nn.Module):
     """An abstract class to handle weights initialization."""
 
-    def __init__(self, config, output_attentions, *inputs, **kwargs):
+    def __init__(self, config, output_attentions, output_key_query, *inputs, **kwargs):
         super(TransformerInitModel, self).__init__()
         self.config = config
         self.output_attentions = output_attentions
+        self.output_key_query = output_key_query
 
     def init_Transformer_weights(self, module):
         """Initialize the weights."""
@@ -482,11 +523,12 @@ class TransformerModel(TransformerInitModel):
         self,
         config,
         input_dim,
-        output_attentions=False,
+        output_attentions=False, # this is what you'd be changing
+        output_key_query=True, 
         keep_multihead_output=False,
         with_input_module=True,
     ):
-        super(TransformerModel, self).__init__(config, output_attentions)
+        super(TransformerModel, self).__init__(config, output_attentions, output_key_query)
         self.with_input_module = with_input_module
         if self.with_input_module:
             self.input_representations = TransformerInputRepresentations(
@@ -495,6 +537,7 @@ class TransformerModel(TransformerInitModel):
         self.encoder = TransformerEncoder(
             config,
             output_attentions=output_attentions,
+            output_key_query=output_key_query,
             keep_multihead_output=keep_multihead_output,
         )
         self.apply(self.init_Transformer_weights)
@@ -567,16 +610,58 @@ class TransformerModel(TransformerInitModel):
             input_representations = self.input_representations(spec_input, pos_enc)
         else:
             input_representations = spec_input
+        
         encoded_layers = self.encoder(
             input_representations,
             extended_attention_mask,
             output_all_encoded_layers=output_all_encoded_layers,
             head_mask=head_mask,
         )
+
+        # print("directly inside encoded layer output_attentions: ")
+        # print("len of encoded_layers: ", len(encoded_layers))
+        # print("type of encoded layers: ", type(encoded_layers))
+        # print("len of encoded_layers[0]: ", len(encoded_layers[0]))
+        # print("type of encoded_layers[0]: ", type(encoded_layers[0]))
+        # print("len of encoded layers[1]: ", len(encoded_layers[1]))
+        # print("type of encoded layers[1]: ", type(encoded_layers[1]))
+
         if self.output_attentions:
             all_attentions, encoded_layers = encoded_layers
+            # print("directly inside encoded layer output_attentions: ")
+            # print("len of all_attentions: ", len(all_attentions))
+            # print("type of all_attentions: ", type(all_attentions))
+            # print("len of encoded layers: ", len(encoded_layers))
+            # print("len of encoded_layers[0]: ", len(encoded_layers[0]))
+            # print("type of encoded_layers[0]: ", type(encoded_layers[0]))
+            # print("len of encoded layers[1]: ", len(encoded_layers[1]))
+            # print("type of encoded layers[1]: ", type(encoded_layers[1][0]))
+
+            # print("in MODEL: last item in encoded layers [3]: ")
+            # print(encoded_layers[3][0])
+         
+        if self.output_key_query:
+            all_attentions, keys, queries, encoded_layers = encoded_layers
+            # print("directly inside encoded layer output_attentions: ")
+            # print("len of all_attentions: ", len(all_attentions))
+            # print("type of all_attentions: ", type(all_attentions))
+            # print("len of encoded layers: ", len(encoded_layers))
+            # print("len of encoded_layers[0]: ", len(encoded_layers[0]))
+            # print("type of encoded_layers[0]: ", type(encoded_layers[0]))
+            # print("len of encoded layers[1]: ", len(encoded_layers[1]))
+            # print("type of encoded layers[1]: ", type(encoded_layers[1][0]))
+
+            # print("in MODEL: last item in encoded layers [3]: ")
+            print(encoded_layers[3][0])
+
         if not output_all_encoded_layers:
             encoded_layers = encoded_layers[-1]
+
         if self.output_attentions:
-            return all_attentions, encoded_layers
+            return all_attentions, encoded_layers 
+
+        if self.output_key_query:
+            print('returning key and query')
+            return all_attentions, keys, queries, encoded_layers
+       
         return encoded_layers
