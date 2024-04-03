@@ -144,7 +144,7 @@ class TransformerSelfAttention(nn.Module):
 
         # initializing key and queries
         self.query = nn.Linear(config.hidden_size, self.all_head_size)
-        print('query: ', self.query)
+        # print('query: ', self.query)
         self.key = nn.Linear(config.hidden_size, self.all_head_size)
         self.value = nn.Linear(config.hidden_size, self.all_head_size)
 
@@ -159,7 +159,7 @@ class TransformerSelfAttention(nn.Module):
         return x.permute(0, 2, 1, 3)
 
     def forward(self, hidden_states, attention_mask, head_mask=None):
-        print('hidden states: ', hidden_states.shape)
+        # print('hidden states: ', hidden_states.shape)
         mixed_query_layer = self.query(hidden_states)
         mixed_key_layer = self.key(hidden_states)
         mixed_value_layer = self.value(hidden_states)
@@ -269,7 +269,7 @@ class TransformerAttention(nn.Module):
         if self.output_attentions:
             attentions, self_output = self_output
         if self.output_key_query:
-            print("self output: ", len(self_output))
+            # print("self output: ", len(self_output))
             attentions, keys, queries, self_output = self_output
 
         attention_output = self.output(self_output, input_tensor)
@@ -410,7 +410,6 @@ class TransformerEncoder(nn.Module):
                 all_attentions.append(attentions)
                 all_keys.append(keys)
                 all_queries.append(queries)
-                print('here within TransformerEncoder')
 
         if self.pre_layer_norm:
             all_encoder_layers.append(self.LayerNorm[-1](hidden_states))
@@ -652,7 +651,7 @@ class TransformerModel(TransformerInitModel):
             # print("type of encoded layers[1]: ", type(encoded_layers[1][0]))
 
             # print("in MODEL: last item in encoded layers [3]: ")
-            print(encoded_layers[3][0])
+            # print("shape of hidden layers: ", encoded_layers[3][0].shape)
 
         if not output_all_encoded_layers:
             encoded_layers = encoded_layers[-1]

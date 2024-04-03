@@ -73,10 +73,6 @@ class UpstreamExpert(UpstreamBase):
     #     print("len after unbinding hidden states: ", len(hidden_states.unbind(dim=0)))
     #     print("Type of after unbinding hidden_states: ", type(hidden_states.unbind(dim=0)))
     #     print("first item after unbinding of hidden states: ", hidden_states.unbind(dim=0)[0])
-
-
-
-
     #     return {
     #         "last_hidden_state": last_hidden_state,
     #         "hidden_states": hidden_states.unbind(dim=0),
@@ -89,26 +85,33 @@ class UpstreamExpert(UpstreamBase):
             wavs
         )  # (batch_size, extracted_seqlen, feature_dim)
 
+        # print('inside expert.py forward: \n')
+        # print('shape of encoded_layers: ', len(encoded_layers) )
+        # print(f' shape of encoded_layers[0]: {len(encoded_layers[0])} ')
+        # print(f' shape of encoded_layers[0]: {len(encoded_layers[1])} ')
+        # print(f' shape of encoded_layers[0]: {len(encoded_layers[2])} ')
+        # print(f' shape of encoded_layers[0]: {len(encoded_layers[3])} ')
+
         attentions = encoded_layers[0]
         keys = encoded_layers[1]
         queries = encoded_layers[2]
-        hidden_states = torch.stack(encoded_layers[1])
+        hidden_states = torch.stack(encoded_layers[3])
 
-        print("---------")
-        print("Len of attentions: ", len(attentions))
-        print("Type of attentions: ", type(attentions))
+        # print("---------")
+        # print("Len of attentions: ", len(attentions))
+        # print("Type of attentions: ", type(attentions))
 
-        print("---------")
-        print("Len encoded_layers: ", len(encoded_layers))
-        print("Type encoded_layers: ", type(encoded_layers))
-        print("Len encoded_layers[0] (same as attentions): ", len(encoded_layers[0]))
-        print("Type of encoded_layers[0] (same as attentions): ", type(encoded_layers[0]))
-        print("Len of encoded_layers[1] : ", type(encoded_layers[1]))
-        print("Len of encoded_layers[2] : ", type(encoded_layers[2]))
+        # print("---------")
+        # print("Len encoded_layers: ", len(encoded_layers))
+        # print("Type encoded_layers: ", type(encoded_layers))
+        # print("Len encoded_layers[0] (same as attentions): ", len(encoded_layers[0]))
+        # print("Type of encoded_layers[0] (same as attentions): ", type(encoded_layers[0]))
+        # print("Len of encoded_layers[1] : ", type(encoded_layers[1]))
+        # print("Len of encoded_layers[2] : ", type(encoded_layers[2]))
 
-        # this type should be a tensor! where is the type being changed?
-        print("Len encoded_layers[1] (hidden_states): ", len(encoded_layers[1]))
-        print("Type of encoded_layers[1] (hidden_states): ", type(encoded_layers[1]))
+        # # this type should be a tensor! where is the type being changed?
+        # print("Len encoded_layers[1] (hidden_states): ", len(encoded_layers[1]))
+        # print("Type of encoded_layers[1] (hidden_states): ", type(encoded_layers[1]))
 
         # print("inside EXPERT: last item in encoded layers [3]: ")
         # print(hidden_states[3][0])
